@@ -195,6 +195,86 @@ func TestMetaUnmarshalRejectsUnknownStatus(t *testing.T) {
 	}
 }
 
+func TestMetaJSONUsesFormatTimestamp(t *testing.T) {
+	// Test that Meta's MarshalJSON routes timestamps through FormatTimestamp.
+	// Construct a Meta with a non-UTC time at sub-millisecond precision.
+	// The output JSON should contain UTC, truncated-to-ms, 3-digit fractional, Z suffix.
+
+	edtZone := time.FixedZone("EDT", -4*3600)
+	startedAt := time.Date(2026, 5, 3, 10, 23, 1, 234999999, edtZone)
+	// 10:23 EDT == 14:23 UTC; 234999999 ns = 234.999999 ms -> truncates to 234 ms
+
+	meta := &Meta{
+		Version:   1,
+		ID:        "test-id-001",
+		Pid:       999,
+		Cwd:       "/tmp/test",
+		Cmd:       []string{"test"},
+		StartedAt: startedAt,
+		Status:    StatusRunning,
+		ExitedAt:  nil,
+		ExitCode:  nil,
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	jsonStr := string(jsonBytes)
+
+	// Verify the JSON contains the expected formatted timestamp
+	// Should be: UTC time (14:23:01), truncated to 234ms, 3 digits, Z suffix
+	expectedTimestamp := `"started_at":"2026-05-03T14:23:01.234Z"`
+	if !strings.Contains(jsonStr, expectedTimestamp) {
+		t.Errorf("JSON should contain %s, got: %s", expectedTimestamp, jsonStr)
+	}
+}
+
+func TestFormatTimestamp(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    time.Time
+		expected string
+	}{
+		{
+			name:     "UTC at exact millisecond",
+			input:    time.Date(2026, 5, 3, 14, 23, 1, 234*int(time.Millisecond), time.UTC),
+			expected: "2026-05-03T14:23:01.234Z",
+		},
+		{
+			name:     "Non-UTC time converted to UTC",
+			input:    time.Date(2026, 5, 3, 10, 23, 1, 234*int(time.Millisecond), time.FixedZone("EDT", -4*3600)),
+			expected: "2026-05-03T14:23:01.234Z",
+		},
+		{
+			name:     "Sub-millisecond precision truncated, not rounded",
+			input:    time.Date(2026, 5, 3, 14, 23, 1, 234999999, time.UTC),
+			expected: "2026-05-03T14:23:01.234Z",
+		},
+		{
+			name:     "Trailing-zero milliseconds preserved as 3 digits",
+			input:    time.Date(2026, 5, 3, 14, 23, 1, 500*int(time.Millisecond), time.UTC),
+			expected: "2026-05-03T14:23:01.500Z",
+		},
+		{
+			name:     "Zero milliseconds",
+			input:    time.Date(2026, 5, 3, 14, 23, 1, 0, time.UTC),
+			expected: "2026-05-03T14:23:01.000Z",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := FormatTimestamp(tt.input)
+			if result != tt.expected {
+				t.Errorf("FormatTimestamp(%v) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 // Helper functions
 func containsVersionField(s string) bool {
 	return strings.Contains(s, `"version":1`) || strings.Contains(s, `"version": 1`)
