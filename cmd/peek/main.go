@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 
+	"github.com/Pankaj3112/peek/internal/cli"
 	"github.com/Pankaj3112/peek/internal/wrapper"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -100,19 +104,42 @@ func handleMCP(args []string) {
 	os.Exit(1)
 }
 
-func handleList(args []string) {
-	fmt.Fprintf(os.Stderr, "list: not yet implemented\n")
-	os.Exit(1)
+func handleList(_ []string) {
+	width := getTerminalWidth(os.Stdout)
+	if err := cli.RenderList(os.Stdout, width); err != nil {
+		fmt.Fprintf(os.Stderr, "peek list: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func getTerminalWidth(f *os.File) int {
+	fd := int(f.Fd())
+	if !term.IsTerminal(fd) {
+		return 100
+	}
+	w, _, err := term.GetSize(fd)
+	if err != nil {
+		return 100
+	}
+	return w
 }
 
 func handleLogs(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "logs: missing id argument\n")
+		fmt.Fprintln(os.Stderr, "peek logs: missing id argument")
 		os.Exit(2)
 	}
-	id := args[0]
-	fmt.Fprintf(os.Stderr, "logs: not yet implemented (id=%s)\n", id)
-	os.Exit(1)
+	id, err := cli.ResolveIDPrefix(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "peek logs: %v\n", err)
+		os.Exit(1)
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	if err := cli.RenderLogs(ctx, os.Stdout, id); err != nil && err != context.Canceled {
+		fmt.Fprintf(os.Stderr, "peek logs: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func handleWrap(args []string) {
