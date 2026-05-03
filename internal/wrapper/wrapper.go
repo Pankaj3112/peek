@@ -126,7 +126,7 @@ func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, terminalOut
 	// 7. Start the signal loop in a goroutine; cancel it when Wrap returns.
 	sigCtx, sigCancel := context.WithCancel(context.Background())
 	defer sigCancel()
-	go signalLoop(sigCtx, p, parentTerminalSize)
+	go signalLoop(sigCtx, c.Process, p, parentTerminalSize)
 
 	// 8. Goroutine: pump pty master output through LineDiscipline → LogWriter
 	// and simultaneously tee raw bytes to terminalOut (the user's terminal).
