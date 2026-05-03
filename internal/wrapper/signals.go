@@ -69,6 +69,10 @@ func handleSignal(sig os.Signal, state *signalState, p ptyResizer, getSize func(
 		if state != nil && state.proc != nil {
 			_ = state.proc.Signal(syscall.SIGQUIT)
 		}
+	case syscallSIGTSTP():
+		handleTSTP(state)
+	case syscallSIGCONT():
+		handleCONT(state)
 	}
 }
 

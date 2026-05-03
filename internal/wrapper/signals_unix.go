@@ -8,8 +8,8 @@ import (
 )
 
 // platformSignals returns the set of signals the wrapper listens for on Unix.
-// Tasks 21-23 extend the list: SIGINT, SIGTERM, SIGHUP, SIGQUIT.
-// Tasks 24-25 will add SIGTSTP, SIGCONT.
+// Tasks 21-23 added SIGINT, SIGTERM, SIGHUP, SIGQUIT.
+// Task 24 adds SIGTSTP, SIGCONT.
 func platformSignals() []os.Signal {
 	return []os.Signal{
 		syscall.SIGWINCH,
@@ -17,5 +17,7 @@ func platformSignals() []os.Signal {
 		syscall.SIGTERM,
 		syscall.SIGHUP,
 		syscall.SIGQUIT,
+		syscall.SIGTSTP,
+		syscall.SIGCONT,
 	}
 }
