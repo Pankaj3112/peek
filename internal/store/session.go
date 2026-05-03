@@ -92,11 +92,12 @@ func writeMetaAtomic(dir string, m *Meta) error {
 	return nil
 }
 
-// Scan reads all session directories under SessionsRoot and returns their Meta objects,
-// sorted by ULID in descending order (newest first).
+// Scan returns all sessions from the sessions root, with crash detection applied.
+// It reads all session directories under SessionsRoot, applies PID liveness detection
+// to each Meta, and returns MetaViews sorted by ULID in descending order (newest first).
 // It silently skips directories without meta.json or with malformed meta.json files.
 // Returns (nil-or-empty-slice, nil) if the SessionsRoot does not exist (first-run case).
-func Scan() ([]*Meta, error) {
+func Scan() ([]MetaView, error) {
 	root, err := platform.SessionsRoot()
 	if err != nil {
 		return nil, err
@@ -110,7 +111,7 @@ func Scan() ([]*Meta, error) {
 		return nil, err
 	}
 
-	var metas []*Meta
+	var views []MetaView
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -119,13 +120,13 @@ func Scan() ([]*Meta, error) {
 		if m == nil {
 			continue
 		}
-		metas = append(metas, m)
+		views = append(views, ApplyCrashDetection(m))
 	}
 
 	// Sort by ID descending (newest first)
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].ID > metas[j].ID
+	sort.Slice(views, func(i, j int) bool {
+		return views[i].Meta.ID > views[j].Meta.ID
 	})
 
-	return metas, nil
+	return views, nil
 }

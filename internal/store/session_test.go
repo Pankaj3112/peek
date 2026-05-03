@@ -298,22 +298,22 @@ func TestScan(t *testing.T) {
 		}
 
 		// Scan sessions
-		metas, err := Scan()
+		views, err := Scan()
 		if err != nil {
 			t.Fatalf("Scan failed: %v", err)
 		}
 
-		// Verify we got 3 metas back
-		if len(metas) != 3 {
-			t.Fatalf("Expected 3 metas, got %d", len(metas))
+		// Verify we got 3 views back
+		if len(views) != 3 {
+			t.Fatalf("Expected 3 views, got %d", len(views))
 		}
 
 		// Verify they are sorted by ULID descending (newest first)
 		// ULID is lexicographically sortable, so string comparison works
-		for i := 0; i < len(metas)-1; i++ {
-			if metas[i].ID <= metas[i+1].ID {
-				t.Errorf("Metas not sorted in descending order at index %d: %s should be > %s",
-					i, metas[i].ID, metas[i+1].ID)
+		for i := 0; i < len(views)-1; i++ {
+			if views[i].Meta.ID <= views[i+1].Meta.ID {
+				t.Errorf("Views not sorted in descending order at index %d: %s should be > %s",
+					i, views[i].Meta.ID, views[i+1].Meta.ID)
 			}
 		}
 
@@ -322,9 +322,9 @@ func TestScan(t *testing.T) {
 		for _, s := range sessions {
 			createdIDs[s.Meta.ID] = true
 		}
-		for _, meta := range metas {
-			if !createdIDs[meta.ID] {
-				t.Errorf("Scan returned unexpected meta: %s", meta.ID)
+		for _, view := range views {
+			if !createdIDs[view.Meta.ID] {
+				t.Errorf("Scan returned unexpected view: %s", view.Meta.ID)
 			}
 		}
 	})
@@ -358,21 +358,21 @@ func TestScan(t *testing.T) {
 			t.Fatalf("failed to create empty dir: %v", err)
 		}
 
-		// Scan should return 2 metas, ignoring the empty directory
-		metas, err := Scan()
+		// Scan should return 2 views, ignoring the empty directory
+		views, err := Scan()
 		if err != nil {
 			t.Fatalf("Scan failed: %v", err)
 		}
 
-		if len(metas) != 2 {
-			t.Fatalf("Expected 2 metas, got %d", len(metas))
+		if len(views) != 2 {
+			t.Fatalf("Expected 2 views, got %d", len(views))
 		}
 
 		// Verify the two sessions are in the result
 		createdIDs := map[string]bool{s1.Meta.ID: true, s2.Meta.ID: true}
-		for _, meta := range metas {
-			if !createdIDs[meta.ID] {
-				t.Errorf("Scan returned unexpected meta: %s", meta.ID)
+		for _, view := range views {
+			if !createdIDs[view.Meta.ID] {
+				t.Errorf("Scan returned unexpected view: %s", view.Meta.ID)
 			}
 		}
 	})
@@ -410,21 +410,21 @@ func TestScan(t *testing.T) {
 			t.Fatalf("failed to write corrupt meta.json: %v", err)
 		}
 
-		// Scan should return 2 metas, ignoring the corrupt one
-		metas, err := Scan()
+		// Scan should return 2 views, ignoring the corrupt one
+		views, err := Scan()
 		if err != nil {
 			t.Fatalf("Scan failed: %v", err)
 		}
 
-		if len(metas) != 2 {
-			t.Fatalf("Expected 2 metas, got %d", len(metas))
+		if len(views) != 2 {
+			t.Fatalf("Expected 2 views, got %d", len(views))
 		}
 
 		// Verify the two valid sessions are in the result
 		createdIDs := map[string]bool{s1.Meta.ID: true, s2.Meta.ID: true}
-		for _, meta := range metas {
-			if !createdIDs[meta.ID] {
-				t.Errorf("Scan returned unexpected meta: %s", meta.ID)
+		for _, view := range views {
+			if !createdIDs[view.Meta.ID] {
+				t.Errorf("Scan returned unexpected view: %s", view.Meta.ID)
 			}
 		}
 	})
@@ -436,14 +436,14 @@ func TestScan(t *testing.T) {
 		t.Setenv("USERPROFILE", tmpHome) // Windows compatibility
 
 		// Don't create any sessions, just scan
-		metas, err := Scan()
+		views, err := Scan()
 		if err != nil {
 			t.Fatalf("Scan failed: %v", err)
 		}
 
 		// Either nil or empty is acceptable
-		if metas != nil && len(metas) != 0 {
-			t.Errorf("Expected nil or empty slice for non-existent root, got %d metas", len(metas))
+		if views != nil && len(views) != 0 {
+			t.Errorf("Expected nil or empty slice for non-existent root, got %d views", len(views))
 		}
 	})
 }
