@@ -1,0 +1,11 @@
+{
+  "name": "peek",
+  "description": "Capture dev server logs and expose them to Claude via MCP.",
+  "version": "0.1.0",
+  "mcpServers": {
+    "peek": {
+      "command": "peek",
+      "args": ["mcp"]
+    }
+  }
+}

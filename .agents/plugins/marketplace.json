@@ -1,0 +1,13 @@
+{
+  "name": "peek",
+  "owner": {
+    "name": "Pankaj3112"
+  },
+  "plugins": [
+    {
+      "name": "peek",
+      "source": "./plugins/peek",
+      "description": "Capture dev server logs and expose them to Claude via MCP."
+    }
+  ]
+}
