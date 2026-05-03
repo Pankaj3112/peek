@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -84,7 +85,12 @@ func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
 		return -1, err
 	}
 
-	// 7. Goroutine: pump pty master output through LineDiscipline → LogWriter
+	// 7. Start the signal loop in a goroutine; cancel it when Wrap returns.
+	sigCtx, sigCancel := context.WithCancel(context.Background())
+	defer sigCancel()
+	go signalLoop(sigCtx, p, parentTerminalSize)
+
+	// 8. Goroutine: pump pty master output through LineDiscipline → LogWriter
 	ld := ansi.NewLineDiscipline(func(line []byte) {
 		if werr := lw.WriteLine(line); werr != nil {
 			fmt.Fprintf(os.Stderr, "peek: log write failed: %v\n", werr)
@@ -98,7 +104,7 @@ func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
 		io.Copy(ld, p) //nolint:errcheck // EOF on pty close is expected
 	}()
 
-	// 8. Wait for child to exit
+	// 9. Wait for child to exit
 	waitErr := c.Wait()
 
 	// Wait for byte pump to drain before closing the log
@@ -107,7 +113,7 @@ func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
 	// Flush any partial line buffered in the line discipline
 	_ = ld.Close()
 
-	// 9. Capture exit code
+	// 10. Capture exit code
 	if waitErr != nil {
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
