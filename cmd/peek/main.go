@@ -10,9 +10,12 @@ import (
 	"path/filepath"
 
 	"github.com/Pankaj3112/peek/internal/cli"
+	"github.com/Pankaj3112/peek/internal/mcp"
 	"github.com/Pankaj3112/peek/internal/wrapper"
 	"golang.org/x/term"
 )
+
+const version = "dev"
 
 func main() {
 	args := os.Args[1:]
@@ -99,9 +102,15 @@ func main() {
 	}
 }
 
-func handleMCP(args []string) {
-	fmt.Fprintf(os.Stderr, "mcp: not yet implemented\n")
-	os.Exit(1)
+func handleMCP(_ []string) {
+	binary, _ := os.Executable()
+	srv := mcp.NewServer(os.Stdin, os.Stdout, os.Stderr, version, binary)
+	// Tool handlers will be registered in Tasks 32, 37, 38.
+	// For now, srv has only initialize/tools/list functioning.
+	if err := srv.ServeUntilEOF(); err != nil {
+		fmt.Fprintf(os.Stderr, "peek mcp: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func handleList(_ []string) {
