@@ -2,6 +2,7 @@ package wrapper_test
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -187,6 +188,52 @@ func TestWrapEcho(t *testing.T) {
 		}
 		if meta.ExitCode == nil || *meta.ExitCode != 7 {
 			t.Errorf("exit_code: got %v, want 7", meta.ExitCode)
+		}
+	})
+}
+
+func TestTeeToTerminalAndLog(t *testing.T) {
+	t.Run("raw_bytes_to_terminal_normalized_to_log", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+
+		// terminalBuf captures what would be written to the user's terminal.
+		var terminalBuf bytes.Buffer
+
+		exitCode, err := wrapper.WrapWithStdioForTest("/some/cwd", []string{"sh", "-c", "printf 'hello\\nworld\\n'"}, nil, &terminalBuf)
+		if err != nil {
+			t.Fatalf("WrapWithStdioForTest returned error: %v", err)
+		}
+		if exitCode != 0 {
+			t.Errorf("exit code: got %d, want 0", exitCode)
+		}
+
+		// Verify the raw terminal output contains "hello" and "world".
+		terminalOut := terminalBuf.String()
+		if !strings.Contains(terminalOut, "hello") {
+			t.Errorf("terminal output does not contain 'hello'; got %q", terminalOut)
+		}
+		if !strings.Contains(terminalOut, "world") {
+			t.Errorf("terminal output does not contain 'world'; got %q", terminalOut)
+		}
+
+		// Verify the session log also contains "hello" and "world".
+		sessDir := findSessionDir(t)
+		logPath := filepath.Join(sessDir, "output.log")
+		lines := readLogLines(t, logPath)
+		foundHello, foundWorld := false, false
+		for _, l := range lines {
+			if strings.Contains(l, "hello") {
+				foundHello = true
+			}
+			if strings.Contains(l, "world") {
+				foundWorld = true
+			}
+		}
+		if !foundHello {
+			t.Errorf("log does not contain 'hello'; lines: %v", lines)
+		}
+		if !foundWorld {
+			t.Errorf("log does not contain 'world'; lines: %v", lines)
 		}
 	})
 }

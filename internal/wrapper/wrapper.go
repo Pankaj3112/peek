@@ -29,29 +29,42 @@ func parentTerminalSize() (rows, cols uint16) {
 }
 
 // Wrap spawns cmd under a pty, captures output to the session log,
-// and returns the child's exit code.
+// and tees raw bytes to the user's terminal (os.Stdout).
 // Signal handling (128+signum) is deferred to Task 25.
-// Tee to parent terminal is deferred to Task 19.
 func Wrap(cwd string, cmd []string) (int, error) {
-	return wrapWithStdin(cwd, cmd, os.Stdin)
+	return wrapWithStdio(cwd, cmd, os.Stdin, os.Stdout)
 }
 
-// wrapWithStdin is the testable internal entry point.
+// WrapWithStdioForTest is exported only for tests. It lets tests supply a
+// custom stdin reader and a terminal-output writer so they can capture the raw
+// bytes that would normally go to os.Stdout.
+// Production code must call Wrap instead.
+func WrapWithStdioForTest(cwd string, cmd []string, stdin io.Reader, terminalOut io.Writer) (int, error) {
+	return wrapWithStdio(cwd, cmd, stdin, terminalOut)
+}
+
+// wrapWithStdio is the testable internal entry point.
 // stdin is the reader to forward to the child's pty stdin.
-func wrapWithStdin(cwd string, cmd []string, stdin io.Reader) (int, error) {
+// terminalOut receives raw pty output bytes (ANSI-intact) for the user's terminal.
+func wrapWithStdio(cwd string, cmd []string, stdin io.Reader, terminalOut io.Writer) (int, error) {
 	rows, cols := parentTerminalSize()
-	return wrapWithStdinAndSize(cwd, cmd, stdin, rows, cols)
+	return wrapWithStdinAndSize(cwd, cmd, stdin, terminalOut, rows, cols)
+}
+
+// wrapWithStdin is kept for internal use by signal tests that don't need terminalOut.
+func wrapWithStdin(cwd string, cmd []string, stdin io.Reader) (int, error) {
+	return wrapWithStdio(cwd, cmd, stdin, io.Discard)
 }
 
 // wrapWithSize is the internal implementation that accepts explicit pty dimensions.
 // Wrap calls this after querying the parent terminal size (or using defaults).
 // This is also used directly by tests to verify pty sizing behaviour.
 func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
-	return wrapWithStdinAndSize(cwd, cmd, os.Stdin, rows, cols)
+	return wrapWithStdinAndSize(cwd, cmd, os.Stdin, io.Discard, rows, cols)
 }
 
-// wrapWithStdinAndSize is the core implementation accepting both stdin and pty dimensions.
-func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, rows, cols uint16) (int, error) {
+// wrapWithStdinAndSize is the core implementation accepting both stdin, terminal output writer, and pty dimensions.
+func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, terminalOut io.Writer, rows, cols uint16) (int, error) {
 	// 1. Create session (records cwd, cmd, pid, status=running in meta.json)
 	sess, err := store.Create(cwd, cmd)
 	if err != nil {
@@ -105,8 +118,10 @@ func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, rows, cols 
 		fmt.Fprintf(os.Stderr, "peek: raw mode toggle failed: %v\n", rawErr)
 	}
 
-	// Forward parent stdin to pty master.
-	forwardStdin(p, stdin)
+	// Forward parent stdin to pty master (nil stdin means no forwarding).
+	if stdin != nil {
+		forwardStdin(p, stdin)
+	}
 
 	// 7. Start the signal loop in a goroutine; cancel it when Wrap returns.
 	sigCtx, sigCancel := context.WithCancel(context.Background())
@@ -114,17 +129,23 @@ func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, rows, cols 
 	go signalLoop(sigCtx, p, parentTerminalSize)
 
 	// 8. Goroutine: pump pty master output through LineDiscipline → LogWriter
+	// and simultaneously tee raw bytes to terminalOut (the user's terminal).
 	ld := ansi.NewLineDiscipline(func(line []byte) {
 		if werr := lw.WriteLine(line); werr != nil {
 			fmt.Fprintf(os.Stderr, "peek: log write failed: %v\n", werr)
 		}
 	})
 
+	// MultiWriter sends every byte to both destinations:
+	//   - terminalOut: raw bytes with ANSI escapes intact for the user's terminal
+	//   - ld:          same bytes stripped and line-disciplined on the way to the log
+	multi := io.MultiWriter(terminalOut, ld)
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		// io.Copy reads from the pty master until EOF (child exited / pty closed)
-		io.Copy(ld, p) //nolint:errcheck // EOF on pty close is expected
+		io.Copy(multi, p) //nolint:errcheck // EOF on pty close is expected
 	}()
 
 	// 9. Wait for child to exit
