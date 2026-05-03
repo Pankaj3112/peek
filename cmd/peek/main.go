@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
+	"path/filepath"
+
+	"github.com/Pankaj3112/peek/internal/wrapper"
 )
 
 func main() {
@@ -114,15 +116,19 @@ func handleLogs(args []string) {
 }
 
 func handleWrap(args []string) {
-	cmd := args[0]
-	var wrappedArgs string
-	if len(args) > 1 {
-		wrappedArgs = strings.Join(args[1:], " ")
-		fmt.Fprintf(os.Stderr, "wrap: not yet implemented (cmd=%s args=%s)\n", cmd, wrappedArgs)
-	} else {
-		fmt.Fprintf(os.Stderr, "wrap: not yet implemented (cmd=%s args=)\n", cmd)
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "peek: failed to get working directory: %v\n", err)
+		os.Exit(1)
 	}
-	os.Exit(1)
+	cwd = filepath.Clean(cwd)
+
+	exitCode, err := wrapper.Wrap(cwd, args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "peek: wrap failed: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
 }
 
 func printHelp(w io.Writer) {
