@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -151,4 +152,23 @@ func (m *Meta) UnmarshalJSON(data []byte) error {
 	m.ExitCode = mj.ExitCode
 
 	return nil
+}
+
+// ReadMeta reads and parses a meta.json file from the given path.
+// It returns (*Meta, nil) if the file is valid and can be parsed.
+// It returns (nil, nil) if the file does not exist or contains malformed JSON (silent skip per spec).
+// It returns (nil, error) for other I/O errors (e.g., permission denied).
+func ReadMeta(path string) (*Meta, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var m Meta
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, nil
+	}
+	return &m, nil
 }

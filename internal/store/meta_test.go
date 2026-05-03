@@ -2,7 +2,10 @@ package store
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +276,142 @@ func TestFormatTimestamp(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadMeta(t *testing.T) {
+	t.Run("Valid file returns Meta with all fields matching", func(t *testing.T) {
+		tempDir := t.TempDir()
+		metaPath := filepath.Join(tempDir, "meta.json")
+
+		// Write a known good meta.json
+		meta := &Meta{
+			Version:   1,
+			ID:        "01H8XHS7Q9M2K3F4P5N6R7T8V9",
+			Pid:       42,
+			Cwd:       "/Users/test/proj",
+			Cmd:       []string{"npm", "run", "dev"},
+			StartedAt: time.Date(2026, 5, 3, 14, 23, 1, 234*int(time.Millisecond), time.UTC),
+			Status:    StatusRunning,
+			ExitedAt:  nil,
+			ExitCode:  nil,
+		}
+		jsonBytes, err := json.Marshal(meta)
+		if err != nil {
+			t.Fatalf("failed to marshal meta: %v", err)
+		}
+		if err := os.WriteFile(metaPath, jsonBytes, 0o644); err != nil {
+			t.Fatalf("failed to write meta.json: %v", err)
+		}
+
+		// Call ReadMeta
+		result, err := ReadMeta(metaPath)
+		if err != nil {
+			t.Fatalf("ReadMeta failed: %v", err)
+		}
+		if result == nil {
+			t.Fatal("ReadMeta returned nil, expected valid Meta")
+		}
+
+		// Verify all fields match
+		if result.Version != meta.Version {
+			t.Errorf("Version mismatch: got %d, want %d", result.Version, meta.Version)
+		}
+		if result.ID != meta.ID {
+			t.Errorf("ID mismatch: got %s, want %s", result.ID, meta.ID)
+		}
+		if result.Pid != meta.Pid {
+			t.Errorf("Pid mismatch: got %d, want %d", result.Pid, meta.Pid)
+		}
+		if result.Cwd != meta.Cwd {
+			t.Errorf("Cwd mismatch: got %s, want %s", result.Cwd, meta.Cwd)
+		}
+		if !reflect.DeepEqual(result.Cmd, meta.Cmd) {
+			t.Errorf("Cmd mismatch: got %v, want %v", result.Cmd, meta.Cmd)
+		}
+		if !result.StartedAt.Equal(meta.StartedAt) {
+			t.Errorf("StartedAt mismatch: got %v, want %v", result.StartedAt, meta.StartedAt)
+		}
+		if result.Status != meta.Status {
+			t.Errorf("Status mismatch: got %s, want %s", result.Status, meta.Status)
+		}
+		if result.ExitedAt != nil {
+			t.Errorf("ExitedAt should be nil, got %v", *result.ExitedAt)
+		}
+		if result.ExitCode != nil {
+			t.Errorf("ExitCode should be nil, got %d", *result.ExitCode)
+		}
+	})
+
+	t.Run("ENOENT returns nil, nil", func(t *testing.T) {
+		result, err := ReadMeta("/non/existent/path/meta.json")
+		if result != nil {
+			t.Errorf("ReadMeta returned non-nil result for missing file: %v", result)
+		}
+		if err != nil {
+			t.Errorf("ReadMeta returned error for missing file: %v", err)
+		}
+	})
+
+	t.Run("Malformed JSON returns nil, nil", func(t *testing.T) {
+		tempDir := t.TempDir()
+		metaPath := filepath.Join(tempDir, "meta.json")
+		if err := os.WriteFile(metaPath, []byte("not valid json"), 0o644); err != nil {
+			t.Fatalf("failed to write invalid JSON: %v", err)
+		}
+
+		result, err := ReadMeta(metaPath)
+		if result != nil {
+			t.Errorf("ReadMeta returned non-nil result for malformed JSON: %v", result)
+		}
+		if err != nil {
+			t.Errorf("ReadMeta returned error for malformed JSON: %v", err)
+		}
+	})
+
+	t.Run("Permission denied propagates error", func(t *testing.T) {
+		// Skip on Windows or if running as root
+		if runtime.GOOS == "windows" {
+			t.Skip("requires non-Windows system")
+		}
+
+		tempDir := t.TempDir()
+		metaPath := filepath.Join(tempDir, "meta.json")
+
+		// Write a valid meta.json
+		meta := &Meta{
+			Version:   1,
+			ID:        "01H8XHS7Q9M2K3F4P5N6R7T8V9",
+			Pid:       42,
+			Cwd:       "/Users/test/proj",
+			Cmd:       []string{"npm", "run", "dev"},
+			StartedAt: time.Date(2026, 5, 3, 14, 23, 1, 234*int(time.Millisecond), time.UTC),
+			Status:    StatusRunning,
+			ExitedAt:  nil,
+			ExitCode:  nil,
+		}
+		jsonBytes, _ := json.Marshal(meta)
+		if err := os.WriteFile(metaPath, jsonBytes, 0o644); err != nil {
+			t.Fatalf("failed to write meta.json: %v", err)
+		}
+
+		// Deny read access to the directory
+		if err := os.Chmod(tempDir, 0o000); err != nil {
+			t.Fatalf("failed to chmod tempDir: %v", err)
+		}
+		// Restore permissions after the test
+		t.Cleanup(func() {
+			os.Chmod(tempDir, 0o755)
+		})
+
+		// Call ReadMeta and expect an error
+		result, err := ReadMeta(metaPath)
+		if result != nil {
+			t.Errorf("ReadMeta should return nil result on permission error, got %v", result)
+		}
+		if err == nil {
+			t.Errorf("ReadMeta should return error on permission denied, got nil")
+		}
+	})
 }
 
 // Helper functions
