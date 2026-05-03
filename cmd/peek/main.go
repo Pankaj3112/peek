@@ -105,8 +105,8 @@ func main() {
 func handleMCP(_ []string) {
 	binary, _ := os.Executable()
 	srv := mcp.NewServer(os.Stdin, os.Stdout, os.Stderr, version, binary)
-	// Tool handlers will be registered in Tasks 32, 37, 38.
-	// For now, srv has only initialize/tools/list functioning.
+	mcp.RegisterListSessions(srv)
+	// get_logs and search_logs handlers will be registered in Tasks 37, 38.
 	if err := srv.ServeUntilEOF(); err != nil {
 		fmt.Fprintf(os.Stderr, "peek mcp: %v\n", err)
 		os.Exit(1)
