@@ -1,0 +1,94 @@
+package wrapper
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"time"
+
+	pty "github.com/aymanbagabas/go-pty"
+
+	"github.com/Pankaj3112/peek/internal/ansi"
+	"github.com/Pankaj3112/peek/internal/store"
+)
+
+// Wrap spawns cmd under a pty, captures output to the session log,
+// and returns the child's exit code.
+// Signal handling (128+signum) is deferred to Task 25.
+// Stdin forwarding is deferred to Task 18.
+// Tee to parent terminal is deferred to Task 19.
+func Wrap(cwd string, cmd []string) (int, error) {
+	// 1. Create session (records cwd, cmd, pid, status=running in meta.json)
+	sess, err := store.Create(cwd, cmd)
+	if err != nil {
+		return -1, err
+	}
+
+	// 2. Defer Finalize so meta.json is updated even on panic
+	exitCode := -1
+	defer func() {
+		_ = store.Finalize(sess, exitCode) // best-effort; exit code is captured before return
+	}()
+
+	// 3. Open log writer
+	lw, err := store.NewLogWriter(sess.Dir, time.Now)
+	if err != nil {
+		return -1, err
+	}
+	defer lw.Close()
+
+	// 4. Open pty
+	p, err := pty.New()
+	if err != nil {
+		return -1, err
+	}
+	defer p.Close()
+
+	// 5. Build the command attached to the pty
+	c := p.Command(cmd[0], cmd[1:]...)
+
+	// Inject PEEK_SESSION_ID into child environment
+	c.Env = append(os.Environ(), "PEEK_SESSION_ID="+sess.Meta.ID)
+
+	if err := c.Start(); err != nil {
+		return -1, err
+	}
+
+	// 6. Goroutine: pump pty master output through LineDiscipline → LogWriter
+	ld := ansi.NewLineDiscipline(func(line []byte) {
+		if werr := lw.WriteLine(line); werr != nil {
+			fmt.Fprintf(os.Stderr, "peek: log write failed: %v\n", werr)
+		}
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// io.Copy reads from the pty master until EOF (child exited / pty closed)
+		io.Copy(ld, p) //nolint:errcheck // EOF on pty close is expected
+	}()
+
+	// 7. Wait for child to exit
+	waitErr := c.Wait()
+
+	// Wait for byte pump to drain before closing the log
+	<-done
+
+	// Flush any partial line buffered in the line discipline
+	_ = ld.Close()
+
+	// 8. Capture exit code
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			// Unexpected error (failed Wait, etc.)
+			return -1, waitErr
+		}
+	} else {
+		exitCode = 0
+	}
+
+	return exitCode, nil
+}
