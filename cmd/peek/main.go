@@ -27,18 +27,21 @@ func main() {
 
 		// Parse peek's own flags before --
 		fs := flag.NewFlagSet("peek", flag.ContinueOnError)
-		fs.SetOutput(nil) // Suppress default error output
+		fs.SetOutput(io.Discard) // Suppress default error output
 		version := fs.Bool("version", false, "")
 		help := fs.Bool("help", false, "")
-		fs.Bool("h", false, "")
+		h := fs.Bool("h", false, "")
 
-		_ = fs.Parse(peekArgs)
+		if err := fs.Parse(peekArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "peek: %v\n", err)
+			os.Exit(2)
+		}
 
 		if *version {
 			fmt.Println("peek dev")
 			os.Exit(0)
 		}
-		if *help {
+		if *help || *h {
 			printHelp(os.Stdout)
 			os.Exit(0)
 		}
