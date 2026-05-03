@@ -1,0 +1,10 @@
+peek
+bin/
+dist/
+*.test
+coverage.out
+.peek-test-tmp/
+.idea/
+.vscode/
+*.swp
+.DS_Store
