@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -38,7 +39,7 @@ func main() {
 			os.Exit(0)
 		}
 		if *help {
-			printHelp()
+			printHelp(os.Stdout)
 			os.Exit(0)
 		}
 
@@ -61,7 +62,7 @@ func main() {
 	// No -- found; parse normal subcommands
 	if len(args) == 0 {
 		// No args at all: print help and exit 2
-		printHelp()
+		printHelp(os.Stdout)
 		os.Exit(2)
 	}
 
@@ -71,7 +72,7 @@ func main() {
 		os.Exit(0)
 	}
 	if args[0] == "--help" || args[0] == "-h" {
-		printHelp()
+		printHelp(os.Stdout)
 		os.Exit(0)
 	}
 
@@ -121,7 +122,7 @@ func handleWrap(args []string) {
 	os.Exit(1)
 }
 
-func printHelp() {
+func printHelp(w io.Writer) {
 	help := `peek - CLI wrapper for dev server logs
 
 Usage:
@@ -140,10 +141,10 @@ Subcommands:
 Wrap mode:
   peek -- <cmd> [args...]  Wrap and capture a command
 `
-	fmt.Print(help)
+	fmt.Fprint(w, help)
 }
 
 func printUnknownSubcommand(name string) {
 	fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n\n", name)
-	printHelp()
+	printHelp(os.Stderr)
 }
