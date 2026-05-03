@@ -8,10 +8,24 @@ import (
 	"time"
 
 	pty "github.com/aymanbagabas/go-pty"
+	"golang.org/x/term"
 
 	"github.com/Pankaj3112/peek/internal/ansi"
 	"github.com/Pankaj3112/peek/internal/store"
 )
+
+// parentTerminalSize queries the parent terminal size.
+// Falls back to 80×24 (cols×rows) if stdin is not a terminal or if GetSize fails.
+func parentTerminalSize() (rows, cols uint16) {
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		w, h, err := term.GetSize(fd)
+		if err == nil && w > 0 && h > 0 {
+			return uint16(h), uint16(w)
+		}
+	}
+	return 24, 80
+}
 
 // Wrap spawns cmd under a pty, captures output to the session log,
 // and returns the child's exit code.
@@ -19,6 +33,14 @@ import (
 // Stdin forwarding is deferred to Task 18.
 // Tee to parent terminal is deferred to Task 19.
 func Wrap(cwd string, cmd []string) (int, error) {
+	rows, cols := parentTerminalSize()
+	return wrapWithSize(cwd, cmd, rows, cols)
+}
+
+// wrapWithSize is the internal implementation of Wrap that accepts explicit pty dimensions.
+// Wrap calls this after querying the parent terminal size (or using defaults).
+// This is also used directly by tests to verify pty sizing behaviour.
+func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
 	// 1. Create session (records cwd, cmd, pid, status=running in meta.json)
 	sess, err := store.Create(cwd, cmd)
 	if err != nil {
@@ -45,7 +67,14 @@ func Wrap(cwd string, cmd []string) (int, error) {
 	}
 	defer p.Close()
 
-	// 5. Build the command attached to the pty
+	// 5. Set pty size before starting the child so the child inherits correct dimensions.
+	// go-pty Resize signature: Resize(width int, height int) error
+	if err := p.Resize(int(cols), int(rows)); err != nil {
+		// Non-fatal: child still works at default pty size.
+		fmt.Fprintf(os.Stderr, "peek: pty resize failed: %v\n", err)
+	}
+
+	// 6. Build the command attached to the pty
 	c := p.Command(cmd[0], cmd[1:]...)
 
 	// Inject PEEK_SESSION_ID into child environment
@@ -55,7 +84,7 @@ func Wrap(cwd string, cmd []string) (int, error) {
 		return -1, err
 	}
 
-	// 6. Goroutine: pump pty master output through LineDiscipline → LogWriter
+	// 7. Goroutine: pump pty master output through LineDiscipline → LogWriter
 	ld := ansi.NewLineDiscipline(func(line []byte) {
 		if werr := lw.WriteLine(line); werr != nil {
 			fmt.Fprintf(os.Stderr, "peek: log write failed: %v\n", werr)
@@ -69,7 +98,7 @@ func Wrap(cwd string, cmd []string) (int, error) {
 		io.Copy(ld, p) //nolint:errcheck // EOF on pty close is expected
 	}()
 
-	// 7. Wait for child to exit
+	// 8. Wait for child to exit
 	waitErr := c.Wait()
 
 	// Wait for byte pump to drain before closing the log
@@ -78,7 +107,7 @@ func Wrap(cwd string, cmd []string) (int, error) {
 	// Flush any partial line buffered in the line discipline
 	_ = ld.Close()
 
-	// 8. Capture exit code
+	// 9. Capture exit code
 	if waitErr != nil {
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
