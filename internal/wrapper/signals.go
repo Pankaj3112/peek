@@ -44,7 +44,7 @@ func handleSignal(sig os.Signal, p ptyResizer, getSize func() (rows, cols uint16
 	switch sig {
 	case syscall.SIGWINCH:
 		handleSIGWINCH(p, getSize)
-	// SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP, SIGCONT added in Tasks 21-25.
+		// SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP, SIGCONT added in Tasks 21-25.
 	}
 }
 

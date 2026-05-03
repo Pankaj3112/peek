@@ -31,17 +31,27 @@ func parentTerminalSize() (rows, cols uint16) {
 // Wrap spawns cmd under a pty, captures output to the session log,
 // and returns the child's exit code.
 // Signal handling (128+signum) is deferred to Task 25.
-// Stdin forwarding is deferred to Task 18.
 // Tee to parent terminal is deferred to Task 19.
 func Wrap(cwd string, cmd []string) (int, error) {
-	rows, cols := parentTerminalSize()
-	return wrapWithSize(cwd, cmd, rows, cols)
+	return wrapWithStdin(cwd, cmd, os.Stdin)
 }
 
-// wrapWithSize is the internal implementation of Wrap that accepts explicit pty dimensions.
+// wrapWithStdin is the testable internal entry point.
+// stdin is the reader to forward to the child's pty stdin.
+func wrapWithStdin(cwd string, cmd []string, stdin io.Reader) (int, error) {
+	rows, cols := parentTerminalSize()
+	return wrapWithStdinAndSize(cwd, cmd, stdin, rows, cols)
+}
+
+// wrapWithSize is the internal implementation that accepts explicit pty dimensions.
 // Wrap calls this after querying the parent terminal size (or using defaults).
 // This is also used directly by tests to verify pty sizing behaviour.
 func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
+	return wrapWithStdinAndSize(cwd, cmd, os.Stdin, rows, cols)
+}
+
+// wrapWithStdinAndSize is the core implementation accepting both stdin and pty dimensions.
+func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, rows, cols uint16) (int, error) {
 	// 1. Create session (records cwd, cmd, pid, status=running in meta.json)
 	sess, err := store.Create(cwd, cmd)
 	if err != nil {
@@ -84,6 +94,19 @@ func wrapWithSize(cwd string, cmd []string, rows, cols uint16) (int, error) {
 	if err := c.Start(); err != nil {
 		return -1, err
 	}
+
+	// Enable raw mode on the parent terminal if it is one.
+	// CRITICAL: defer restore() IMMEDIATELY after the raw-mode toggle so that
+	// panics or unexpected exits don't leave the user's terminal broken.
+	restore, rawErr := enableRawModeIfTerminal()
+	defer restore()
+	if rawErr != nil {
+		// Non-fatal — fall back to line-buffered stdin.
+		fmt.Fprintf(os.Stderr, "peek: raw mode toggle failed: %v\n", rawErr)
+	}
+
+	// Forward parent stdin to pty master.
+	forwardStdin(p, stdin)
 
 	// 7. Start the signal loop in a goroutine; cancel it when Wrap returns.
 	sigCtx, sigCancel := context.WithCancel(context.Background())
