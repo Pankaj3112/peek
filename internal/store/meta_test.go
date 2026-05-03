@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,11 +38,11 @@ func TestMetaJSONRoundTripRunning(t *testing.T) {
 	}
 
 	// Check for null serialization of nullable fields
-	if !containsSubstring(jsonStr, `"exited_at":null`) && !containsSubstring(jsonStr, `"exited_at": null`) {
+	if !strings.Contains(jsonStr, `"exited_at":null`) && !strings.Contains(jsonStr, `"exited_at": null`) {
 		t.Errorf("JSON should contain exited_at as null but got: %s", jsonStr)
 	}
 
-	if !containsSubstring(jsonStr, `"exit_code":null`) && !containsSubstring(jsonStr, `"exit_code": null`) {
+	if !strings.Contains(jsonStr, `"exit_code":null`) && !strings.Contains(jsonStr, `"exit_code": null`) {
 		t.Errorf("JSON should contain exit_code as null but got: %s", jsonStr)
 	}
 
@@ -74,11 +75,11 @@ func TestMetaJSONRoundTripRunning(t *testing.T) {
 	if unmarshalled.Status != meta.Status {
 		t.Errorf("Status mismatch: got %s, want %s", unmarshalled.Status, meta.Status)
 	}
-	if unmarshalled.ExitedAt != meta.ExitedAt {
-		t.Errorf("ExitedAt mismatch: got %v, want %v", unmarshalled.ExitedAt, meta.ExitedAt)
+	if unmarshalled.ExitedAt != nil {
+		t.Errorf("ExitedAt should be nil, got %v", *unmarshalled.ExitedAt)
 	}
-	if unmarshalled.ExitCode != meta.ExitCode {
-		t.Errorf("ExitCode mismatch: got %v, want %v", unmarshalled.ExitCode, meta.ExitCode)
+	if unmarshalled.ExitCode != nil {
+		t.Errorf("ExitCode should be nil, got %d", *unmarshalled.ExitCode)
 	}
 }
 
@@ -104,6 +105,21 @@ func TestMetaJSONRoundTripExited(t *testing.T) {
 	jsonBytes, err := json.Marshal(meta)
 	if err != nil {
 		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	jsonStr := string(jsonBytes)
+
+	// exit_code=0 must serialize as 0, not null (regression guard for omitempty)
+	if strings.Contains(jsonStr, `"exit_code":null`) {
+		t.Errorf("exit_code=0 must serialize as 0, not null; JSON: %s", jsonStr)
+	}
+	if !strings.Contains(jsonStr, `"exit_code":0`) {
+		t.Errorf("exit_code=0 must serialize as 0; JSON: %s", jsonStr)
+	}
+
+	// exited_at must serialize as a non-null string
+	if strings.Contains(jsonStr, `"exited_at":null`) {
+		t.Errorf("exited_at must not be null when set; JSON: %s", jsonStr)
 	}
 
 	// Unmarshal into a fresh Meta
@@ -137,15 +153,15 @@ func TestMetaJSONRoundTripExited(t *testing.T) {
 	}
 
 	// Check ExitedAt pointer value
-	if unmarshalled.ExitedAt == nil || meta.ExitedAt == nil {
-		t.Errorf("ExitedAt pointers should not be nil")
+	if unmarshalled.ExitedAt == nil {
+		t.Errorf("ExitedAt should not be nil after round-trip")
 	} else if !unmarshalled.ExitedAt.Equal(*meta.ExitedAt) {
 		t.Errorf("ExitedAt value mismatch: got %v, want %v", *unmarshalled.ExitedAt, *meta.ExitedAt)
 	}
 
 	// Check ExitCode pointer value
-	if unmarshalled.ExitCode == nil || meta.ExitCode == nil {
-		t.Errorf("ExitCode pointers should not be nil")
+	if unmarshalled.ExitCode == nil {
+		t.Errorf("ExitCode should not be nil after round-trip")
 	} else if *unmarshalled.ExitCode != *meta.ExitCode {
 		t.Errorf("ExitCode value mismatch: got %d, want %d", *unmarshalled.ExitCode, *meta.ExitCode)
 	}
@@ -174,21 +190,12 @@ func TestMetaUnmarshalRejectsUnknownStatus(t *testing.T) {
 	}
 
 	errMsg := err.Error()
-	if !containsSubstring(errMsg, "crashed") && !containsSubstring(errMsg, "invalid status") {
+	if !strings.Contains(errMsg, "crashed") && !strings.Contains(errMsg, "invalid status") {
 		t.Errorf("Error message should mention the invalid value or be descriptive, got: %s", errMsg)
 	}
 }
 
 // Helper functions
 func containsVersionField(s string) bool {
-	return containsSubstring(s, `"version":1`) || containsSubstring(s, `"version": 1`)
-}
-
-func containsSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(s, `"version":1`) || strings.Contains(s, `"version": 1`)
 }

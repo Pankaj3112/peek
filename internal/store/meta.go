@@ -31,8 +31,9 @@ func (s *Status) UnmarshalText(b []byte) error {
 
 // Meta represents the metadata of a session, serialized to meta.json on disk.
 type Meta struct {
-	Version   int        `json:"version"`
-	ID        string     `json:"id"`
+	Version int    `json:"version"`
+	ID      string `json:"id"`
+	// Pid is the wrapper process's PID (not the wrapped child's). Used for read-time crash detection.
 	Pid       int        `json:"pid"`
 	Cwd       string     `json:"cwd"`
 	Cmd       []string   `json:"cmd"`
