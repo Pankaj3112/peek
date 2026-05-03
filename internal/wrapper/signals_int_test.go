@@ -166,6 +166,115 @@ func TestSIGINTGraceful(t *testing.T) {
 	}
 }
 
+// TestDoubleSIGINTSkipsTimer sends SIGINT twice to the wrapper wrapping a child
+// that ignores both INT and TERM.  The second SIGINT should cancel the graceful
+// timer and SIGKILL the child immediately, so the wrapper exits well under the
+// 5-second graceful window.
+func TestDoubleSIGINTSkipsTimer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix-only")
+	}
+	skipIfBashUnavailable(t)
+
+	// Child ignores both SIGINT and SIGTERM, so only SIGKILL will terminate it.
+	shellCmd := `trap '' INT TERM; sleep 30`
+	cmd := spawnPeek(t, shellCmd)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	})
+
+	// Give child a moment to set up the trap.
+	time.Sleep(300 * time.Millisecond)
+
+	start := time.Now()
+
+	// First SIGINT: starts the 5s graceful timer.
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatalf("send first SIGINT: %v", err)
+	}
+
+	// Wait 200ms (well within the 5s window) then send the second SIGINT.
+	time.Sleep(200 * time.Millisecond)
+
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		// Process may have already exited if something went wrong.
+		t.Logf("send second SIGINT: %v (may be already dead)", err)
+	}
+
+	// The second SIGINT should cancel the timer and SIGKILL immediately.
+	// Wrapper should exit within ~1s (well under the 5s timer).
+	_, ok := waitOrTimeout(cmd, 3*time.Second)
+	elapsed := time.Since(start)
+
+	if !ok {
+		t.Fatalf("wrapper did not exit within 3s after double SIGINT (want immediate SIGKILL)")
+	}
+	t.Logf("wrapper exited after %v (expected << 5s)", elapsed)
+
+	// Must exit well under the 5s graceful timeout.
+	if elapsed >= 4*time.Second {
+		t.Errorf("wrapper took too long (%v); double-INT should skip the 5s timer", elapsed)
+	}
+}
+
+// TestDoubleSIGINTUnit verifies the state machine: second forwardWithGraceful call
+// cancels the timer and calls SIGKILL on a mock process.
+func TestDoubleSIGINTUnit(t *testing.T) {
+	// Spawn a long-lived process we can signal safely.
+	dummy := exec.Command("sleep", "60")
+	if err := dummy.Start(); err != nil {
+		t.Fatalf("start dummy sleep: %v", err)
+	}
+	// Cleanup: kill the process if still alive; ignore double-wait errors.
+	t.Cleanup(func() { _ = dummy.Process.Kill() })
+
+	origTimeout := gracefulShutdownTimeout
+	gracefulShutdownTimeout = 10 * time.Second // long enough to not fire during test
+	defer func() { gracefulShutdownTimeout = origTimeout }()
+
+	state := &signalState{proc: dummy.Process}
+
+	// First signal: sets up timer.
+	forwardWithGraceful(syscall.SIGINT, state)
+
+	state.gracefulMu.Lock()
+	timerAfterFirst := state.gracefulTimer
+	pendingAfterFirst := state.gracefulPending
+	state.gracefulMu.Unlock()
+
+	if !pendingAfterFirst {
+		t.Error("gracefulPending should be true after first SIGINT")
+	}
+	if timerAfterFirst == nil {
+		t.Error("gracefulTimer should be set after first SIGINT")
+	}
+
+	// Second signal: should cancel timer and SIGKILL.
+	forwardWithGraceful(syscall.SIGINT, state)
+
+	state.gracefulMu.Lock()
+	timerAfterSecond := state.gracefulTimer
+	state.gracefulMu.Unlock()
+
+	if timerAfterSecond != nil {
+		t.Error("gracefulTimer should be nil after second SIGINT (cancelled)")
+	}
+
+	// The dummy process should be dead now (SIGKILL was sent).
+	// Wait for it to actually exit; use a channel so we can timeout.
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- dummy.Wait() }()
+	select {
+	case waitErr := <-waitDone:
+		// Expected: killed process returns an error.
+		t.Logf("dummy process exited after SIGKILL: %v", waitErr)
+	case <-time.After(2 * time.Second):
+		t.Error("dummy process still alive 2s after double SIGINT (expected SIGKILL)")
+	}
+}
+
 // TestSIGTERMTimeoutEscalates spawns a subprocess that ignores SIGTERM.
 // After the 5s graceful timeout, the wrapper should SIGKILL the child.
 // Total time should be ~5s; we wait up to 8s to be safe.
