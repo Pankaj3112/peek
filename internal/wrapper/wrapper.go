@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"time"
 
 	pty "github.com/aymanbagabas/go-pty"
@@ -157,16 +156,19 @@ func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, terminalOut
 	// Flush any partial line buffered in the line discipline
 	_ = ld.Close()
 
-	// 10. Capture exit code
-	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			// Unexpected error (failed Wait, etc.)
+	// 10. Capture exit code using platform-aware deriveExitCode.
+	// On Unix, signal-killed children get 128+signum (bash convention).
+	// On Windows, the raw ExitCode() is returned.
+	exitCode = deriveExitCode(c, waitErr)
+	// If waitErr is non-nil and we got -1, it was an unexpected Wait failure.
+	if waitErr != nil && exitCode == -1 {
+		// Check if it's actually an unexpected error (not a signal/exit error).
+		// deriveExitCode returns -1 only when ProcessState is nil, which means
+		// Wait() failed without obtaining process state (e.g. the process was
+		// never started). In that case, propagate the error.
+		if c.ProcessState == nil {
 			return -1, waitErr
 		}
-	} else {
-		exitCode = 0
 	}
 
 	return exitCode, nil
