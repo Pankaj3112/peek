@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/Pankaj3112/peek/internal/platform"
@@ -89,4 +90,42 @@ func writeMetaAtomic(dir string, m *Meta) error {
 	}
 
 	return nil
+}
+
+// Scan reads all session directories under SessionsRoot and returns their Meta objects,
+// sorted by ULID in descending order (newest first).
+// It silently skips directories without meta.json or with malformed meta.json files.
+// Returns (nil-or-empty-slice, nil) if the SessionsRoot does not exist (first-run case).
+func Scan() ([]*Meta, error) {
+	root, err := platform.SessionsRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var metas []*Meta
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		m, _ := ReadMeta(filepath.Join(root, entry.Name(), "meta.json"))
+		if m == nil {
+			continue
+		}
+		metas = append(metas, m)
+	}
+
+	// Sort by ID descending (newest first)
+	sort.Slice(metas, func(i, j int) bool {
+		return metas[i].ID > metas[j].ID
+	})
+
+	return metas, nil
 }

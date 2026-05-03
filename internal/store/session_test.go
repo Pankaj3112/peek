@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Pankaj3112/peek/internal/platform"
 )
 
 func TestSessionCreateAndFinalize(t *testing.T) {
@@ -274,6 +276,174 @@ func TestSessionCreateAndFinalize(t *testing.T) {
 		}
 		if meta2.ExitCode == nil || *meta2.ExitCode != exitCode {
 			t.Errorf("exit_code after second Finalize: got %v, want %d", meta2.ExitCode, exitCode)
+		}
+	})
+}
+
+func TestScan(t *testing.T) {
+	t.Run("Sorted output: descending by ULID (newest first)", func(t *testing.T) {
+		// Setup: redirect HOME to isolate this test
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("USERPROFILE", tmpHome) // Windows compatibility
+		// Create 3 sessions with 1ms sleeps to ensure different ULIDs
+		var sessions []*Session
+		for i := 0; i < 3; i++ {
+			s, err := Create("/some/cwd", []string{"cmd"})
+			if err != nil {
+				t.Fatalf("Create failed: %v", err)
+			}
+			sessions = append(sessions, s)
+			time.Sleep(1 * time.Millisecond)
+		}
+
+		// Scan sessions
+		metas, err := Scan()
+		if err != nil {
+			t.Fatalf("Scan failed: %v", err)
+		}
+
+		// Verify we got 3 metas back
+		if len(metas) != 3 {
+			t.Fatalf("Expected 3 metas, got %d", len(metas))
+		}
+
+		// Verify they are sorted by ULID descending (newest first)
+		// ULID is lexicographically sortable, so string comparison works
+		for i := 0; i < len(metas)-1; i++ {
+			if metas[i].ID <= metas[i+1].ID {
+				t.Errorf("Metas not sorted in descending order at index %d: %s should be > %s",
+					i, metas[i].ID, metas[i+1].ID)
+			}
+		}
+
+		// Verify all three created sessions are present
+		createdIDs := make(map[string]bool)
+		for _, s := range sessions {
+			createdIDs[s.Meta.ID] = true
+		}
+		for _, meta := range metas {
+			if !createdIDs[meta.ID] {
+				t.Errorf("Scan returned unexpected meta: %s", meta.ID)
+			}
+		}
+	})
+
+	t.Run("Skips missing meta.json", func(t *testing.T) {
+		// Setup: redirect HOME to isolate this test
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("USERPROFILE", tmpHome) // Windows compatibility
+
+		// Create 2 valid sessions
+		s1, err := Create("/some/cwd", []string{"cmd"})
+		if err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+		time.Sleep(1 * time.Millisecond)
+
+		s2, err := Create("/some/cwd", []string{"cmd"})
+		if err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+		time.Sleep(1 * time.Millisecond)
+
+		// Create a third directory under SessionsRoot with no meta.json
+		root, err := platform.SessionsRoot()
+		if err != nil {
+			t.Fatalf("SessionsRoot failed: %v", err)
+		}
+		emptyDir := filepath.Join(root, "01H8XHS7Q9M2K3F4P5N6R7T8V0")
+		if err := os.MkdirAll(emptyDir, 0o755); err != nil {
+			t.Fatalf("failed to create empty dir: %v", err)
+		}
+
+		// Scan should return 2 metas, ignoring the empty directory
+		metas, err := Scan()
+		if err != nil {
+			t.Fatalf("Scan failed: %v", err)
+		}
+
+		if len(metas) != 2 {
+			t.Fatalf("Expected 2 metas, got %d", len(metas))
+		}
+
+		// Verify the two sessions are in the result
+		createdIDs := map[string]bool{s1.Meta.ID: true, s2.Meta.ID: true}
+		for _, meta := range metas {
+			if !createdIDs[meta.ID] {
+				t.Errorf("Scan returned unexpected meta: %s", meta.ID)
+			}
+		}
+	})
+
+	t.Run("Skips corrupt meta.json", func(t *testing.T) {
+		// Setup: redirect HOME to isolate this test
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("USERPROFILE", tmpHome) // Windows compatibility
+
+		// Create 2 valid sessions
+		s1, err := Create("/some/cwd", []string{"cmd"})
+		if err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+		time.Sleep(1 * time.Millisecond)
+
+		s2, err := Create("/some/cwd", []string{"cmd"})
+		if err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+		time.Sleep(1 * time.Millisecond)
+
+		// Create a third directory with corrupt meta.json
+		root, err := platform.SessionsRoot()
+		if err != nil {
+			t.Fatalf("SessionsRoot failed: %v", err)
+		}
+		corruptDir := filepath.Join(root, "01H8XHS7Q9M2K3F4P5N6R7T8V1")
+		if err := os.MkdirAll(corruptDir, 0o755); err != nil {
+			t.Fatalf("failed to create corrupt dir: %v", err)
+		}
+		corruptMeta := filepath.Join(corruptDir, "meta.json")
+		if err := os.WriteFile(corruptMeta, []byte("not valid json"), 0o644); err != nil {
+			t.Fatalf("failed to write corrupt meta.json: %v", err)
+		}
+
+		// Scan should return 2 metas, ignoring the corrupt one
+		metas, err := Scan()
+		if err != nil {
+			t.Fatalf("Scan failed: %v", err)
+		}
+
+		if len(metas) != 2 {
+			t.Fatalf("Expected 2 metas, got %d", len(metas))
+		}
+
+		// Verify the two valid sessions are in the result
+		createdIDs := map[string]bool{s1.Meta.ID: true, s2.Meta.ID: true}
+		for _, meta := range metas {
+			if !createdIDs[meta.ID] {
+				t.Errorf("Scan returned unexpected meta: %s", meta.ID)
+			}
+		}
+	})
+
+	t.Run("Empty/non-existent root returns nil slice or empty slice", func(t *testing.T) {
+		// Setup: redirect HOME to isolate this test
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+		t.Setenv("USERPROFILE", tmpHome) // Windows compatibility
+
+		// Don't create any sessions, just scan
+		metas, err := Scan()
+		if err != nil {
+			t.Fatalf("Scan failed: %v", err)
+		}
+
+		// Either nil or empty is acceptable
+		if metas != nil && len(metas) != 0 {
+			t.Errorf("Expected nil or empty slice for non-existent root, got %d metas", len(metas))
 		}
 	})
 }
