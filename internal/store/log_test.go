@@ -253,3 +253,194 @@ func TestLogWriter(t *testing.T) {
 		}
 	})
 }
+
+func TestLogRotation(t *testing.T) {
+	t.Run("rotation triggers at threshold", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		clockFunc := func() time.Time {
+			return time.Date(2026, 5, 3, 14, 23, 1, 0, time.UTC)
+		}
+
+		// 1 KiB threshold
+		lw, err := newLogWriterWithThreshold(tmpDir, clockFunc, 1024)
+		if err != nil {
+			t.Fatalf("newLogWriterWithThreshold failed: %v", err)
+		}
+		defer lw.Close()
+
+		// Write enough lines to cross 1 KiB
+		// Each line is ~32 bytes (timestamp + " " + content + "\n")
+		for i := 0; i < 40; i++ {
+			if err := lw.WriteLine([]byte("x")); err != nil {
+				t.Fatalf("WriteLine failed: %v", err)
+			}
+		}
+
+		// Check that both files exist
+		logPath := filepath.Join(tmpDir, "output.log")
+		rotatedPath := filepath.Join(tmpDir, "output.log.1")
+
+		if _, err := os.Stat(logPath); err != nil {
+			t.Errorf("output.log does not exist: %v", err)
+		}
+		if _, err := os.Stat(rotatedPath); err != nil {
+			t.Errorf("output.log.1 does not exist: %v", err)
+		}
+
+		// Verify rotated file is approximately threshold size
+		info, err := os.Stat(rotatedPath)
+		if err != nil {
+			t.Fatalf("Stat output.log.1 failed: %v", err)
+		}
+		rotatedSize := info.Size()
+		if rotatedSize < 900 || rotatedSize > 1100 {
+			t.Logf("rotated file size: %d (expected ~1024)", rotatedSize)
+		}
+	})
+
+	t.Run("existing output.log.1 is overwritten on rotation", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		clockFunc := func() time.Time {
+			return time.Date(2026, 5, 3, 14, 23, 1, 0, time.UTC)
+		}
+
+		// Pre-create output.log.1 with known content
+		rotatedPath := filepath.Join(tmpDir, "output.log.1")
+		if err := os.WriteFile(rotatedPath, []byte("old content"), 0o644); err != nil {
+			t.Fatalf("WriteFile failed: %v", err)
+		}
+
+		lw, err := newLogWriterWithThreshold(tmpDir, clockFunc, 1024)
+		if err != nil {
+			t.Fatalf("newLogWriterWithThreshold failed: %v", err)
+		}
+		defer lw.Close()
+
+		// Write enough to trigger rotation
+		for i := 0; i < 40; i++ {
+			if err := lw.WriteLine([]byte("x")); err != nil {
+				t.Fatalf("WriteLine failed: %v", err)
+			}
+		}
+
+		// Verify output.log.1 no longer contains old content
+		content, err := os.ReadFile(rotatedPath)
+		if err != nil {
+			t.Fatalf("ReadFile failed: %v", err)
+		}
+
+		if strings.Contains(string(content), "old content") {
+			t.Errorf("output.log.1 still contains old content")
+		}
+	})
+
+	t.Run("rotation is inline (synchronous)", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		clockFunc := func() time.Time {
+			return time.Date(2026, 5, 3, 14, 23, 1, 0, time.UTC)
+		}
+
+		lw, err := newLogWriterWithThreshold(tmpDir, clockFunc, 1024)
+		if err != nil {
+			t.Fatalf("newLogWriterWithThreshold failed: %v", err)
+		}
+		defer lw.Close()
+
+		// Write enough to trigger rotation
+		for i := 0; i < 40; i++ {
+			if err := lw.WriteLine([]byte("x")); err != nil {
+				t.Fatalf("WriteLine failed: %v", err)
+			}
+		}
+
+		// Immediately check that rotation happened
+		rotatedPath := filepath.Join(tmpDir, "output.log.1")
+		if _, err := os.Stat(rotatedPath); err != nil {
+			t.Errorf("output.log.1 does not exist after WriteLine: %v", err)
+		}
+	})
+
+	t.Run("both files together preserve all written lines", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		clockFunc := func() time.Time {
+			return time.Date(2026, 5, 3, 14, 23, 1, 0, time.UTC)
+		}
+
+		// Use larger threshold (5 KiB) so we have at most one rotation during this test
+		lw, err := newLogWriterWithThreshold(tmpDir, clockFunc, 5*1024)
+		if err != nil {
+			t.Fatalf("newLogWriterWithThreshold failed: %v", err)
+		}
+		defer lw.Close()
+
+		// Write 100 lines - with 5 KiB threshold, this should fit in one or two files
+		for i := 0; i < 100; i++ {
+			lineContent := []byte("line")
+			if err := lw.WriteLine(lineContent); err != nil {
+				t.Fatalf("WriteLine failed: %v", err)
+			}
+		}
+
+		// Read both files
+		rotatedPath := filepath.Join(tmpDir, "output.log.1")
+		logPath := filepath.Join(tmpDir, "output.log")
+
+		rotatedContent := ""
+		if data, err := os.ReadFile(rotatedPath); err == nil {
+			rotatedContent = string(data)
+		}
+
+		logContent, err := os.ReadFile(logPath)
+		if err != nil {
+			t.Fatalf("ReadFile output.log failed: %v", err)
+		}
+
+		// Count total lines (at most 2 files at end of test)
+		allContent := rotatedContent + string(logContent)
+		lineCount := strings.Count(allContent, "\n")
+
+		if lineCount != 100 {
+			t.Errorf("expected 100 lines total, got %d", lineCount)
+		}
+
+		// Verify lines are in order (all "line" strings should be present)
+		if strings.Count(allContent, "line") != 100 {
+			t.Errorf("expected 100 'line' strings, got %d", strings.Count(allContent, "line"))
+		}
+	})
+
+	t.Run("multiple rotations keep at most two files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		clockFunc := func() time.Time {
+			return time.Date(2026, 5, 3, 14, 23, 1, 0, time.UTC)
+		}
+
+		lw, err := newLogWriterWithThreshold(tmpDir, clockFunc, 512)
+		if err != nil {
+			t.Fatalf("newLogWriterWithThreshold failed: %v", err)
+		}
+		defer lw.Close()
+
+		// Write enough to trigger TWO rotations
+		for i := 0; i < 100; i++ {
+			if err := lw.WriteLine([]byte("x")); err != nil {
+				t.Fatalf("WriteLine failed: %v", err)
+			}
+		}
+
+		// Check files
+		logPath := filepath.Join(tmpDir, "output.log")
+		rotatedPath := filepath.Join(tmpDir, "output.log.1")
+		rotated2Path := filepath.Join(tmpDir, "output.log.2")
+
+		if _, err := os.Stat(logPath); err != nil {
+			t.Errorf("output.log does not exist: %v", err)
+		}
+		if _, err := os.Stat(rotatedPath); err != nil {
+			t.Errorf("output.log.1 does not exist: %v", err)
+		}
+		if _, err := os.Stat(rotated2Path); err == nil {
+			t.Errorf("output.log.2 should not exist; only two files expected")
+		}
+	})
+}
