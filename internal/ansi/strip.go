@@ -23,6 +23,7 @@ func Strip(b []byte) []byte {
 
 	out := make([]byte, 0, len(b))
 	state := stateNormal
+	csiParams := make([]byte, 0, 16) // Buffer to accumulate CSI parameters
 
 	for i := 0; i < len(b); i++ {
 		c := b[i]
@@ -39,6 +40,7 @@ func Strip(b []byte) []byte {
 			switch c {
 			case '[':
 				state = stateCSI
+				csiParams = csiParams[:0] // Reset parameter buffer
 			case ']':
 				state = stateOSC
 			case '(', ')', '*', '+':
@@ -55,10 +57,20 @@ func Strip(b []byte) []byte {
 			// Parameter bytes: 0x30-0x3F
 			// Intermediate bytes: 0x20-0x2F
 			// Final byte: 0x40-0x7E
-			if (c >= 0x30 && c <= 0x3F) || (c >= 0x20 && c <= 0x2F) {
-				// Stay in CSI, accumulating parameters/intermediates
+			if c >= 0x30 && c <= 0x3F {
+				// Parameter byte, accumulate it
+				csiParams = append(csiParams, c)
+			} else if c >= 0x20 && c <= 0x2F {
+				// Intermediate byte, accumulate it
+				csiParams = append(csiParams, c)
 			} else if c >= 0x40 && c <= 0x7E {
 				// Final byte, sequence complete
+				// Check if this is CHA ('G') with parameter 1 or empty
+				if c == 'G' && (len(csiParams) == 0 || (len(csiParams) == 1 && csiParams[0] == '1')) {
+					// CHA col 1 or default col 1: emit CR
+					out = append(out, '\r')
+				}
+				// For all other CSI sequences, drop them
 				state = stateNormal
 			} else {
 				// Unexpected byte; bail to normal

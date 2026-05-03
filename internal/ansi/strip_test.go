@@ -126,6 +126,31 @@ func TestStripANSI(t *testing.T) {
 			input:    []byte("\x1b[? !p"),
 			expected: []byte(""),
 		},
+		{
+			name:     "CHA col 1 emits CR",
+			input:    []byte("foo\x1b[1Gbar"),
+			expected: []byte("foo\rbar"),
+		},
+		{
+			name:     "CHA default param emits CR",
+			input:    []byte("foo\x1b[Gbar"),
+			expected: []byte("foo\rbar"),
+		},
+		{
+			name:     "CHA non-1 column dropped",
+			input:    []byte("foo\x1b[5Gbar"),
+			expected: []byte("foobar"),
+		},
+		{
+			name:     "npm-style spinner pattern",
+			input:    []byte("\x1b[1G\x1b[0Kframe1\x1b[1G\x1b[0Kframe2"),
+			expected: []byte("\rframe1\rframe2"),
+		},
+		{
+			name:     "CUP not converted",
+			input:    []byte("a\x1b[Hb"),
+			expected: []byte("ab"),
+		},
 	}
 
 	for _, tt := range tests {
