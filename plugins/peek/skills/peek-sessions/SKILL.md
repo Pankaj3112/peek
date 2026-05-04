@@ -50,22 +50,24 @@ There is no persistent connection. Each call is a fresh request. If the user wan
 
 ## Wiring peek into project workflows
 
-Users often want peek always-on without remembering to wrap commands manually. Suggest editing the project's run scripts so the wrap is invisible. Below are patterns by file type. Pick based on whether peek should be a required project dependency or optional with a fallback.
+**peek is a development-time dependency only.** Only wrap commands developers run on their own machines while iterating. Never wrap production startup, deploy, or CI build commands — that would force every contributor and every CI runner to install peek, and would capture logs that already go to better destinations (PaaS dashboards, CI artifacts).
+
+Below are patterns by file type. Pick based on whether peek should be required for the dev script or available alongside a peek-free fallback for contributors who don't have it installed.
 
 ### `package.json` (Node, Bun, pnpm, yarn)
+
+Wrap **only** dev-mode scripts. Do NOT wrap `start`, `build`, `test`, `lint`, or anything CI runs.
 
 **Required — committed to project:**
 ```json
 "scripts": {
-  "dev": "peek -- next dev",
-  "start": "peek -- node server.js",
-  "build": "peek -- next build"
+  "dev": "peek -- next dev"
 }
 ```
 
-Document peek as a dev dependency in the README. New contributors install peek before `npm run dev` works.
+Document peek as a recommended dev tool in the README so contributors install it before running `npm run dev`.
 
-**Optional — graceful fallback:**
+**Optional — graceful fallback so contributors without peek aren't blocked:**
 ```json
 "scripts": {
   "dev": "command -v peek >/dev/null && peek -- next dev || next dev",
@@ -74,11 +76,11 @@ Document peek as a dev dependency in the README. New contributors install peek b
 }
 ```
 
-Or split scripts: keep `dev` as the canonical no-peek command, add `dev:peek` alongside. Contributors who haven't installed peek can still run `npm run dev:raw`.
+Or keep `dev` as the canonical no-peek command and add `dev:peek` alongside; contributors choose explicitly.
 
-### Rust (`Cargo.toml` + `Justfile` / `Makefile`)
+### Rust (`Justfile` / `Makefile`)
 
-Cargo doesn't have a script section, but project task runners do:
+Cargo has no script section, but project task runners do. Wrap `cargo run` only — leave `cargo build`, `cargo test`, `cargo check` alone.
 
 ```makefile
 .PHONY: dev dev-raw
@@ -98,33 +100,28 @@ dev-raw:
     cargo run
 ```
 
-### `Procfile` (Heroku, Foreman, Honcho)
+### Python (`Makefile`, `Justfile`, or `scripts/dev.sh`)
 
-```
-web: peek -- python app.py
-worker: peek -- python worker.py
-```
-
-### Python (`pyproject.toml` + tooling)
-
-Most Python projects don't standardize a `dev` command, but `Makefile`, `Justfile`, or a small shell script in `scripts/` typically does:
+Most Python projects don't standardize a `dev` command. A `Makefile` target or a one-line shell script is the usual home:
 
 ```makefile
 dev:
 	peek -- flask --app app run --debug
 ```
 
-Or in a `scripts/dev.sh`:
 ```sh
+# scripts/dev.sh
 #!/bin/sh
 exec peek -- flask --app app run --debug
 ```
 
 ### What NOT to wrap
 
-Don't wrap docker-compose or container orchestrators — peek captures the host-side stdout, not what's running inside containers. Container logs are accessible via `docker logs` already.
-
-Don't wrap test runners that produce massive output (e.g. `pytest -v`, `cargo test`) — the per-session 100 MB hard cap will be hit and older output rotated out. peek is designed for dev servers, not test suites.
+- **`start` / `serve` / production startup scripts.** peek is a dev tool. Production servers should write to wherever the platform expects (stdout for containers, syslog, journald, the PaaS log stream).
+- **`build` / `compile` / bundling scripts.** Build steps run in CI and locally as one-shot tasks. CI already captures their output; local one-shot builds don't need session capture.
+- **`test`, `lint`, `typecheck`, `format`, or any CI-run command.** These are batch tasks that flood the 100 MB session cap quickly and aren't useful to read back via MCP.
+- **`docker-compose` / container orchestrators.** peek wraps the host-side stdout, not what runs inside containers. Use `docker logs` for container output.
+- **Heroku/Render/Fly Procfiles or any deploy manifests.** These run on remote infrastructure where peek isn't installed and shouldn't be a dependency.
 
 ## Limitations to keep in mind
 
