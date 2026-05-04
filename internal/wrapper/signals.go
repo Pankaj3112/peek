@@ -61,7 +61,7 @@ func signalLoop(ctx context.Context, proc *os.Process, p ptyResizer, getSize fun
 // handleSignal dispatches a single signal.
 func handleSignal(sig os.Signal, state *signalState, p ptyResizer, getSize func() (rows, cols uint16)) {
 	switch sig {
-	case syscall.SIGWINCH:
+	case syscallSIGWINCH():
 		handleSIGWINCH(p, getSize)
 	case syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP:
 		forwardWithGraceful(sig, state)

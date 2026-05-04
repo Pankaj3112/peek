@@ -15,6 +15,7 @@ builds:
     goos:
       - darwin
       - linux
+      - windows
     goarch:
       - amd64
       - arm64
@@ -96,15 +97,13 @@ brews:
 #   scoop bucket add peek https://github.com/Pankaj3112/scoop-bucket
 #   scoop install peek
 #
-# GoReleaser requires at least one Windows archive to generate the Scoop manifest,
-# so this section must remain commented out until goos: windows is re-enabled.
-#
-# scoops:
-#   - name: peek
-#     repository:
-#       owner: Pankaj3112
-#       name: scoop-bucket
-#     homepage: https://github.com/Pankaj3112/peek
-#     description: Capture dev server logs and expose them to Claude via MCP.
-#     license: MIT
-#     skip_upload: auto
+# GoReleaser requires at least one Windows archive to generate the Scoop manifest.
+scoops:
+  - name: peek
+    repository:
+      owner: Pankaj3112
+      name: scoop-bucket
+    homepage: https://github.com/Pankaj3112/peek
+    description: Capture dev server logs and expose them to Claude via MCP.
+    license: MIT
+    skip_upload: auto

@@ -13,6 +13,9 @@ func platformSignals() []os.Signal {
 	return nil
 }
 
+// syscallSIGWINCH returns a sentinel signal value that never matches on Windows.
+func syscallSIGWINCH() os.Signal { return os.Signal(syscall.Signal(0)) }
+
 // syscallSIGTSTP returns a sentinel signal value that never matches on Windows.
 func syscallSIGTSTP() os.Signal { return os.Signal(syscall.Signal(0)) }
 

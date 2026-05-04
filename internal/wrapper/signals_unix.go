@@ -21,3 +21,6 @@ func platformSignals() []os.Signal {
 		syscall.SIGCONT,
 	}
 }
+
+// syscallSIGWINCH returns the SIGWINCH signal on Unix platforms.
+func syscallSIGWINCH() os.Signal { return syscall.SIGWINCH }
