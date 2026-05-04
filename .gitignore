@@ -4,6 +4,7 @@ dist/
 *.test
 coverage.out
 .peek-test-tmp/
+internal/wrapper/testdata/
 .idea/
 .vscode/
 *.swp
