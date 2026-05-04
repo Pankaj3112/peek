@@ -37,6 +37,10 @@ archives:
     files:
       - LICENSE*
       - README*
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
 
 checksum:
   name_template: 'checksums.txt'
@@ -86,18 +90,16 @@ brews:
       system "#{bin}/peek", "--version"
     skip_upload: auto
 
-# Scoop manifest — activate by:
-#   1. Adding "windows" back to the builds.goos list above (requires porting
-#      internal/wrapper away from PTY/SIGWINCH for Windows support).
-#   2. Creating github.com/Pankaj3112/scoop-bucket (empty repo).
-#   3. Ensuring GITHUB_TOKEN has repo scope.
-#   4. Uncommenting the scoops block below.
-#
-# To install on Windows once active:
+# Scoop manifest — pushed to Pankaj3112/scoop-bucket on every tagged release.
+# To use on Windows after a release:
 #   scoop bucket add peek https://github.com/Pankaj3112/scoop-bucket
 #   scoop install peek
 #
-# GoReleaser requires at least one Windows archive to generate the Scoop manifest.
+# Prerequisites (one-time setup before first release):
+#   1. Create empty repo github.com/Pankaj3112/scoop-bucket
+#   2. Ensure GITHUB_TOKEN env var has repo scope
+#
+# skip_upload: auto means goreleaser does NOT push during --snapshot builds.
 scoops:
   - name: peek
     repository:
