@@ -61,6 +61,8 @@ codex plugin install Pankaj3112/peek
 
 Confirm the MCP server is reachable after install with `/mcp` (Claude Code) or the Codex equivalent.
 
+The plugin bundles a skill (`peek-sessions`) that helps Claude know when to reach for peek — when the user asks about a dev server, build, or local error, Claude will check `list_sessions` first instead of asking for output. The skill also documents wiring patterns for `package.json`, `Procfile`, `Justfile`, and similar so capture can be made always-on for a project.
+
 ## Manual MCP Wiring
 
 For users who don't want the plugin marketplace:
