@@ -84,3 +84,27 @@ brews:
     test: |
       system "#{bin}/peek", "--version"
     skip_upload: auto
+
+# Scoop manifest — activate by:
+#   1. Adding "windows" back to the builds.goos list above (requires porting
+#      internal/wrapper away from PTY/SIGWINCH for Windows support).
+#   2. Creating github.com/Pankaj3112/scoop-bucket (empty repo).
+#   3. Ensuring GITHUB_TOKEN has repo scope.
+#   4. Uncommenting the scoops block below.
+#
+# To install on Windows once active:
+#   scoop bucket add peek https://github.com/Pankaj3112/scoop-bucket
+#   scoop install peek
+#
+# GoReleaser requires at least one Windows archive to generate the Scoop manifest,
+# so this section must remain commented out until goos: windows is re-enabled.
+#
+# scoops:
+#   - name: peek
+#     repository:
+#       owner: Pankaj3112
+#       name: scoop-bucket
+#     homepage: https://github.com/Pankaj3112/peek
+#     description: Capture dev server logs and expose them to Claude via MCP.
+#     license: MIT
+#     skip_upload: auto
