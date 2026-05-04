@@ -107,7 +107,7 @@ func handleMCP(_ []string) {
 	srv := mcp.NewServer(os.Stdin, os.Stdout, os.Stderr, version, binary)
 	mcp.RegisterListSessions(srv)
 	mcp.RegisterGetLogs(srv)
-	// search_logs handler will be registered in Task 38.
+	mcp.RegisterSearchLogs(srv)
 	if err := srv.ServeUntilEOF(); err != nil {
 		fmt.Fprintf(os.Stderr, "peek mcp: %v\n", err)
 		os.Exit(1)
