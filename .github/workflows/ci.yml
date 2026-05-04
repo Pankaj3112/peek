@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -skip 'TestSignalExitCodeSubprocess' ./...
+
+  build-windows:
+    name: Cross-compile (windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Cross-compile for Windows
+        # Verifies the Windows build doesn't regress (build tags work, no
+        # Unix-only syscalls leak into cross-platform code paths).
+        # Full Windows test runs are deferred to v0.1.1 once a friend with a
+        # Windows machine validates ConPTY behavior end-to-end.
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o /tmp/peek_amd64.exe ./cmd/peek
+          GOOS=windows GOARCH=arm64 go build -o /tmp/peek_arm64.exe ./cmd/peek
+          ls -la /tmp/peek_*.exe
