@@ -63,19 +63,19 @@ release:
   draft: false
   prerelease: auto
 
-# Homebrew formula — pushed to Pankaj3112/homebrew-tap on every tagged release.
-# To use after a release:
+# Homebrew formula — DISABLED for v0.1.0.
+# Formula is still generated locally at dist/homebrew/peek.rb on snapshot/release
+# builds, but nothing is pushed anywhere.
+#
+# To enable Homebrew distribution later:
+#   1. Create empty repo github.com/Pankaj3112/homebrew-tap
+#   2. Ensure GITHUB_TOKEN env var has repo scope
+#   3. Change `skip_upload: true` below to `skip_upload: auto`
+#   4. Cut the next release; goreleaser pushes the formula automatically
+#
+# Then users install with:
 #   brew tap Pankaj3112/tap
 #   brew install peek
-#
-# Prerequisites (one-time setup before first release):
-#   1. Create empty repo github.com/Pankaj3112/homebrew-tap
-#   2. Ensure GITHUB_TOKEN env var has repo scope (or use `gh auth login`)
-#   3. Tag a release: git tag v0.1.0 && git push origin v0.1.0
-#   4. Run: goreleaser release   (or let CI do it)
-#
-# skip_upload: auto means goreleaser does NOT push during --snapshot builds,
-# so you can snapshot locally without the tap repo existing yet.
 brews:
   - name: peek
     repository:
@@ -88,18 +88,21 @@ brews:
       bin.install "peek"
     test: |
       system "#{bin}/peek", "--version"
-    skip_upload: auto
+    skip_upload: true
 
-# Scoop manifest — pushed to Pankaj3112/scoop-bucket on every tagged release.
-# To use on Windows after a release:
-#   scoop bucket add peek https://github.com/Pankaj3112/scoop-bucket
-#   scoop install peek
+# Scoop manifest — DISABLED for v0.1.0.
+# Manifest is still generated locally at dist/scoop/peek.json on snapshot/release
+# builds, but nothing is pushed anywhere.
 #
-# Prerequisites (one-time setup before first release):
+# To enable Scoop distribution later:
 #   1. Create empty repo github.com/Pankaj3112/scoop-bucket
 #   2. Ensure GITHUB_TOKEN env var has repo scope
+#   3. Change `skip_upload: true` below to `skip_upload: auto`
+#   4. Cut the next release; goreleaser pushes the manifest automatically
 #
-# skip_upload: auto means goreleaser does NOT push during --snapshot builds.
+# Then Windows users install with:
+#   scoop bucket add peek https://github.com/Pankaj3112/scoop-bucket
+#   scoop install peek
 scoops:
   - name: peek
     repository:
@@ -108,4 +111,4 @@ scoops:
     homepage: https://github.com/Pankaj3112/peek
     description: Capture dev server logs and expose them to Claude via MCP.
     license: MIT
-    skip_upload: auto
+    skip_upload: true

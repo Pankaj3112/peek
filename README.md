@@ -16,7 +16,7 @@ peek is a CLI you wrap your dev server with. It captures stdout and stderr to di
 curl -fsSL https://raw.githubusercontent.com/Pankaj3112/peek/main/install.sh | sh
 ```
 
-This installs the `peek` binary to `~/.local/bin` (Linux/macOS) or via Scoop on Windows.
+This installs the `peek` binary to `~/.local/bin` on Linux/macOS. **Windows users:** the install script is not supported; download the `peek_<version>_windows_<arch>.zip` from [GitHub Releases](https://github.com/Pankaj3112/peek/releases) and extract `peek.exe` to a directory on your `%PATH%`. (Homebrew tap and Scoop bucket distribution are planned for a later release.)
 
 **Until then — build from source:**
 
@@ -124,7 +124,7 @@ These are intentional constraints, not missing features:
 |---|---|
 | `command not found: peek` | `~/.local/bin` is not on your PATH. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell rc file and reload. |
 | `peek mcp failed to start` (Claude Code error) | Same cause: `peek` is not on the PATH that Claude Code uses. Fix PATH as above, then restart Claude Code. |
-| `'peek' is not recognized as an internal or external command` (Windows) | Install via Scoop: `scoop install peek` (available after v0.1.0 ships). Until then, build from source and add the binary to a directory on your `%PATH%`. |
+| `'peek' is not recognized as an internal or external command` (Windows) | Download the Windows `.zip` from [GitHub Releases](https://github.com/Pankaj3112/peek/releases) and extract `peek.exe` to a directory on your `%PATH%`. (Scoop bucket distribution is planned for a later release.) |
 | Claude says it can't find any sessions | Make sure `peek -- <command>` is running in a terminal before asking Claude. Sessions appear immediately on start. |
 | Logs are truncated | peek enforces a 50 MB soft / 100 MB hard cap per session. If your server is very verbose, older lines are rotated out. |
 
