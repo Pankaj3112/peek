@@ -19,6 +19,9 @@ type Session struct {
 // Create creates a new session with the given cwd and command.
 // It returns a Session with a directory in ~/.peek/sessions/<ulid>/ and writes meta.json atomically.
 func Create(cwd string, cmd []string) (*Session, error) {
+	// Per-cwd ring buffer eviction (best-effort; do not block creation on it).
+	_ = EvictOldest(cwd)
+
 	// 1. Generate a new ID
 	id := NewID()
 
