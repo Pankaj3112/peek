@@ -1,0 +1,59 @@
+version: 2
+
+project_name: peek
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: peek
+    main: ./cmd/peek
+    binary: peek
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    flags:
+      - -trimpath
+
+archives:
+  - id: peek
+    ids:
+      - peek
+    name_template: >-
+      {{- .ProjectName }}_{{- .Version }}_
+      {{- if eq .Os "darwin" }}macos
+      {{- else }}{{ .Os }}{{ end }}_
+      {{- .Arch }}
+    files:
+      - LICENSE*
+      - README*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^chore:'
+      - '^test:'
+      - 'merge'
+
+release:
+  github:
+    owner: Pankaj3112
+    name: peek
+  draft: false
+  prerelease: auto

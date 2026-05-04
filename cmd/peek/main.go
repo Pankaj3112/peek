@@ -15,7 +15,8 @@ import (
 	"golang.org/x/term"
 )
 
-const version = "dev"
+// version is set via -X main.version=... at build time by GoReleaser.
+var version = "dev"
 
 func main() {
 	args := os.Args[1:]
@@ -37,7 +38,7 @@ func main() {
 		// Parse peek's own flags before --
 		fs := flag.NewFlagSet("peek", flag.ContinueOnError)
 		fs.SetOutput(io.Discard) // Suppress default error output
-		version := fs.Bool("version", false, "")
+		showVersion := fs.Bool("version", false, "")
 		help := fs.Bool("help", false, "")
 		h := fs.Bool("h", false, "")
 
@@ -46,8 +47,8 @@ func main() {
 			os.Exit(2)
 		}
 
-		if *version {
-			fmt.Println("peek dev")
+		if *showVersion {
+			fmt.Println("peek " + version)
 			os.Exit(0)
 		}
 		if *help || *h {
@@ -80,7 +81,7 @@ func main() {
 
 	// Check for global flags
 	if args[0] == "--version" {
-		fmt.Println("peek dev")
+		fmt.Println("peek " + version)
 		os.Exit(0)
 	}
 	if args[0] == "--help" || args[0] == "-h" {
