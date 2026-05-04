@@ -150,6 +150,14 @@ func wrapWithStdinAndSize(cwd string, cmd []string, stdin io.Reader, terminalOut
 	// 9. Wait for child to exit
 	waitErr := c.Wait()
 
+	// Close the pty master to unblock the byte-pump goroutine. Without this,
+	// io.Copy on Linux blocks forever — the pty master only gets EOF when
+	// explicitly closed, not when the child exits. macOS happens to close it
+	// implicitly when the slave side closes, but we can't rely on that.
+	// The deferred p.Close() below is the safety net for panic paths; closing
+	// twice is benign (go-pty returns an error we already ignore).
+	_ = p.Close()
+
 	// Wait for byte pump to drain before closing the log
 	<-done
 
