@@ -1,49 +1,31 @@
 # peek
 
-Wrap your dev server. Read its logs from Claude.
+If you use Claude Code to debug your dev server, you've probably copy-pasted hundreds of stack traces. peek fixes that. It wraps your dev server and exposes its logs to Claude over MCP, so Claude reads what's happening directly.
 
-## What is peek?
+```text
+$ peek -- npm run dev
+   ▲ Next.js 16
+   - Local:   http://localhost:3000
+   ✓ Ready in 312ms
 
-peek is a CLI you wrap your dev server with. It captures stdout and stderr to disk and exposes them to Claude (or any MCP client) via three tools, so Claude can see what's happening without you pasting output. Run `peek -- npm run dev` instead of `npm run dev`, and Claude in another terminal can debug your server without being told the working directory or session ID.
+# In another Claude Code session:
+You:    my dev server is broken
+Claude: [calls list_sessions, get_logs]
+        TypeError at src/app/page.tsx:42. You're calling .map on
+        undefined. Fired on the most recent compile.
+```
 
 ## Install
 
-Two steps: install the binary, then wire it into your Claude client.
-
-### 1. Install the binary
-
-**macOS / Linux** — one command:
+### 1. Binary
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Pankaj3112/peek/main/install.sh | sh
 ```
 
-This drops `peek` at `~/.local/bin/peek`. Make sure `~/.local/bin` is on your `PATH` — the installer prints shell-specific instructions if it isn't.
+Windows: download `peek_<version>_windows_<arch>.zip` from [Releases](https://github.com/Pankaj3112/peek/releases) and put `peek.exe` on your `%PATH%`.
 
-**Windows** — download `peek_<version>_windows_<arch>.zip` from [GitHub Releases](https://github.com/Pankaj3112/peek/releases) and extract `peek.exe` to a directory on your `%PATH%`. (Homebrew tap and Scoop bucket distribution are planned for a later release.)
-
-**From source** (any platform with Go installed):
-
-```bash
-git clone https://github.com/Pankaj3112/peek.git
-cd peek
-make build
-cp bin/peek ~/.local/bin/peek
-```
-
-Verify the install:
-
-```bash
-peek --version   # → peek 0.1.0
-```
-
-### 2. Wire peek into Claude Code
-
-Two options. Pick one.
-
-#### Option A: Plugin marketplace (recommended)
-
-Includes the bundled `peek-sessions` skill, which helps Claude know when to reach for peek (when the user asks about a dev server, build, error, or running process) and documents project-wiring patterns for `package.json`, `Justfile`, etc.
+### 2. Claude Code plugin
 
 In a Claude Code session:
 
@@ -53,43 +35,23 @@ In a Claude Code session:
 /reload-plugins
 ```
 
-That's it. The plugin auto-registers the MCP server and the skill.
+The plugin registers the MCP server and bundles a skill that teaches Claude when to reach for peek.
 
-#### Option B: Manual MCP wiring
+## How it works
 
-No plugin, no skill — just the three MCP tools.
+`peek -- <command>` spawns your command under a pseudo-terminal, captures its output to `~/.peek/sessions/<ULID>/output.log`, and tees the bytes to your terminal. Your dev server feels identical to running it directly.
 
-```bash
-claude mcp add peek -- peek mcp
-```
+Three MCP tools (`list_sessions`, `get_logs`, `search_logs`) let Claude discover sessions by working directory and read or search the captured output. Claude finds your running server without being told the directory or session ID.
 
-Restart your Claude Code session.
-
-### 3. Verify
-
-In Claude Code:
-
-```
-/mcp
-```
-
-You should see `peek` listed with three tools: `list_sessions`, `get_logs`, `search_logs`.
-
-### Codex CLI
-
-Codex's plugin marketplace works similarly. The plugin manifest we ship is valid for Codex (see `plugins/peek/.codex-plugin/plugin.json`); refer to your Codex CLI docs for the exact install command.
-
-## Use it
-
-Wrap any dev server:
+## Usage
 
 ```bash
-peek -- npm run dev
+peek -- npm run dev           # Node / Next / Vite / etc.
+peek -- cargo run             # Rust
+peek -- flask --app app run   # Python
 ```
 
-Output is forwarded to your terminal exactly as normal. peek captures it to `~/.peek/sessions/<ULID>/output.log` while it runs.
-
-In another Claude Code session at the same project root, ask anything about your server:
+Then in Claude Code, ask anything:
 
 > "What's wrong with my dev server?"
 >
@@ -97,11 +59,11 @@ In another Claude Code session at the same project root, ask anything about your
 >
 > "Did the last request return an error?"
 
-Claude calls `list_sessions` to find your running session (filtered by cwd), then reads with `get_logs` or `search_logs`. You don't tell it the directory or session ID.
+Claude calls `list_sessions` (filtered by your cwd), then `get_logs` or `search_logs` to read the captured output.
 
-### Always-on capture (project-wiring)
+## Project integration
 
-For a project where you always want peek capturing during local dev, wire it into your run scripts. **Wrap dev-mode commands only — never `start`, `build`, `test`, or anything CI runs.**
+For a project where you want every dev session captured, wire peek into your dev script:
 
 ```jsonc
 // package.json
@@ -110,142 +72,78 @@ For a project where you always want peek capturing during local dev, wire it int
 }
 ```
 
-For graceful fallback when a contributor doesn't have peek installed:
+Equivalent for `Justfile`, `Makefile`, `scripts/dev.sh`. **Wrap dev-mode commands only. Never `start`, `build`, `test`, or anything CI runs.** peek is a development tool; production startup and CI builds shouldn't depend on it.
 
-```jsonc
-"scripts": {
-  "dev": "command -v peek >/dev/null && peek -- next dev || next dev",
-  "dev:peek": "peek -- next dev",
-  "dev:raw":  "next dev"
-}
-```
-
-The bundled skill documents wiring for Cargo, Python, Justfile, Makefile, etc.
-
-## CLI commands
-
-These run on your terminal — Claude doesn't need them, but they're useful for inspecting sessions yourself.
+## CLI reference
 
 ```bash
-peek list                 # human-readable table of sessions
-peek logs <id>            # tail or dump a session's logs
-peek logs <id-prefix>     # unambiguous prefixes work too
+peek list             # human-readable table of sessions
+peek logs <id>        # tail or dump a session (id prefix works)
+peek --version
+peek --help
 ```
 
-Example `peek list` output:
+## Limitations
 
-```
-ID         STATUS      STARTED               CMD              CWD
-01H8XHS7Q  running     2026-05-04 14:23:01   npm run dev      ~/Code/myapp
-01H7YGC2R  exited(0)   2026-05-04 12:10:33   cargo run        ~/Code/otherproj
-01H6ABC12  exited(?)   2026-05-04 09:00:00   next dev         ~/Code/myapp
-```
-
-`exited(?)` means the wrapper itself died (SIGKILL, machine reboot) — the wrapped process's exit is unknown but the captured log up to that point is intact.
-
-## What peek does NOT do
-
-These are intentional v1 constraints, not missing features:
-
-- **Restart your server.** Run the command yourself. peek wraps; it does not manage.
-- **Detect your framework.** Claude reads the logs and figures it out.
-- **Name your sessions.** The ULID and cwd identify them.
-- **Forward logs anywhere.** All data stays local. No network calls beyond the local MCP connection.
-- **Filter logs server-side by log level or timestamp.** `search_logs` does regex; everything else is Claude's job.
-- **Stop, restart, or signal your process.** No `peek stop`, no `peek restart`.
-- **Detect ports, git roots, or package names.** Out of scope.
-- **Stream live output.** MCP is request/response; for "watch this", Claude polls `get_logs(start_line: ...)` periodically. The bundled skill documents the pattern.
-- **Provide a web UI, TUI, or GUI.** The interface is Claude.
+- **peek doesn't manage your server.** It wraps and observes; it doesn't restart, signal, or attach to existing processes. To restart, Ctrl+C and run again. peek picks up the new session.
+- **All data stays local.** No network calls beyond the MCP connection to your Claude client. No telemetry, no syncing, no hosted dashboard.
+- **Logs are capped at 100 MB per session.** Older lines roll out. For very verbose servers, only recent context is preserved.
+- **MCP is request/response, not streaming.** For "watch this server", Claude polls `get_logs` periodically. The bundled skill documents the pattern.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
 | `command not found: peek` | `~/.local/bin` is not on your `PATH`. Add `export PATH="$HOME/.local/bin:$PATH"` to your shell rc and reload. |
-| `peek mcp failed to start` (Claude Code error) | Same cause: `peek` is not on the `PATH` Claude Code uses. Fix `PATH`, then restart Claude Code. |
-| `'peek' is not recognized as an internal or external command` (Windows) | Download the Windows `.zip` from [GitHub Releases](https://github.com/Pankaj3112/peek/releases) and extract `peek.exe` to a directory on your `%PATH%`. |
-| Claude says it can't find any sessions | Make sure `peek -- <command>` is running in a terminal before asking. Sessions appear immediately on start. Also try asking with no `cwd` filter — your project root might differ from Claude's working directory. |
-| Claude is calling `list_sessions` but not finding my running server | Confirm the cwd matches: run `pwd` where you started peek, and compare against the cwd Claude is querying. Symlinks (e.g. macOS `/tmp` → `/private/tmp`) are not resolved — peek matches literal paths. |
-| Logs are truncated | peek caps each session at 50 MB current + 50 MB rotated = 100 MB max. For very verbose servers, older lines roll out. |
-| The plugin install picks up the wrong peek binary | The MCP server uses whichever `peek` is on `PATH` when Claude Code spawns it. Run `which peek` outside Claude Code to confirm; if you have multiple installations, remove the unwanted one (see Uninstall below). |
+| `peek mcp failed to start` (in Claude Code) | Same cause: `peek` is not on the `PATH` Claude Code inherits. Fix `PATH`, then restart Claude Code. |
+| `'peek' is not recognized…` (Windows) | Download the `.zip` from [Releases](https://github.com/Pankaj3112/peek/releases) and put `peek.exe` on your `%PATH%`. |
+| Claude can't find your running session | Ask Claude to call `list_sessions` with no `cwd` filter. Symlinks (e.g. macOS `/tmp` → `/private/tmp`) aren't resolved; peek matches literal paths. |
 
 ## Uninstall
 
-### Remove from Claude Code
-
-If you installed via the plugin:
+In Claude Code:
 
 ```
 /plugin uninstall peek
 /plugin marketplace remove peek
 ```
 
-If you wired peek manually with `claude mcp add`:
-
-```bash
-claude mcp remove peek
-```
-
-After either, restart your Claude Code session (or run `/reload-plugins` if you only want to drop the plugin).
-
-### Remove the binary
+Then in a terminal:
 
 ```bash
 rm ~/.local/bin/peek
+rm -rf ~/.peek    # optional, your captured session data
 ```
 
-(Or wherever you installed it — `which peek` will show the path.)
+## Power-user notes
 
-### Remove captured session data (optional)
+**Manual MCP wiring without the plugin** (no bundled skill, just the three MCP tools):
 
 ```bash
-rm -rf ~/.peek
+claude mcp add peek -- peek mcp
 ```
 
-That's everything peek touches on disk. No system services, no daemons, no config files anywhere else.
-
-## Development
+**Build from source:**
 
 ```bash
 git clone https://github.com/Pankaj3112/peek.git
 cd peek
+make build
+cp bin/peek ~/.local/bin/peek
+```
+
+**Codex CLI:** the plugin manifest at `plugins/peek/.codex-plugin/plugin.json` is valid for Codex's marketplace. Refer to your Codex docs for the exact install command.
+
+## Development
+
+```bash
 make build   # → bin/peek
-make test    # all unit and integration tests
-make vet     # go vet
-make fmt     # gofmt -s -w
+make test
+make vet
+make fmt
 ```
 
-### Repo layout
-
-```
-cmd/peek/                                # main binary
-cmd/peek-capture/                        # dev tool: capture raw ANSI for golden fixtures
-internal/ansi/                           # ANSI stripping + line discipline (\r-as-redraw)
-internal/cli/                            # peek list, peek logs
-internal/mcp/                            # MCP server: list_sessions, get_logs, search_logs
-internal/platform/                       # path helpers + cross-platform PID liveness
-internal/store/                          # session metadata + log writer + ring buffer
-internal/wrapper/                        # pty wrapping, signal forwarding, lifecycle
-plugins/peek/                            # Claude Code + Codex plugin manifests + skill
-docs/superpowers/specs/                  # v1 design spec
-docs/superpowers/plans/                  # implementation plan
-```
-
-### Capturing new ANSI fixtures
-
-`cmd/peek-capture/` records raw pty output to a file for use as test fixtures in `internal/ansi/testdata/`. Run it against any tool whose ANSI behavior you want covered:
-
-```bash
-go run ./cmd/peek-capture -o internal/ansi/testdata/unix/some-tool.bin -- some-tool args...
-```
-
-### Regenerating golden test outputs
-
-```bash
-make golden-unix   # macOS/Linux only
-```
-
-After regenerating, **inspect each `*-expected/*.txt` by hand** to confirm the output is what you expect — golden files are hand-curated, not blindly accepted.
+Design spec and implementation plan live in `docs/superpowers/`. The repo layout is documented in the spec.
 
 ---
 
